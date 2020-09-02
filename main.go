@@ -35,43 +35,50 @@ func main() {
 	if err != nil {
 		log.Fatal("unable to get database migrations ", err)
 	}
+
 	if result.RowsReturned() == 0 {
-		createMigrationTable(db)
+		err = createMigrationTable(db)
+		if err != nil {
+			log.Println("error creating mango_db_version", err)
+		}
 	} else {
+		log.Println("table exists, getting existing migration entries")
 		migrations, err = getDatabaseMigrationData(db)
 		if err != nil {
 			log.Fatal("unable to get database migrations ", err)
 		}
 	}
-	log.Printf("%+v", result)
 
-	log.Println(migrations)
+	log.Printf("%+v", migrations)
 
 	readMigrationFiles(*migrationDir)
 }
 
 func getDatabaseMigrationData(db *gopg.DB) ([]models.Migration, error) {
 	migrations := []models.Migration{}
-	err := db.Select(&migrations)
+	query := `
+		SELECT
+			*
+		FROM
+		mango_db_version`
+	_, err := db.Query(&migrations, query)
 	if err != nil {
 		return nil, err
 	}
 	return migrations, nil
 }
 
-func createMigrationTable(db *gopg.DB) {
+func createMigrationTable(db *gopg.DB) error {
 	query := `
 	CREATE TABLE mango_db_version(
 		id SERIAL PRIMARY KEY,
 		file_id VARCHAR(255),
 		next_id INTEGER,
 		order_applied INTEGER,
-		applied_at TIMESTAMP WITH TIMEZONE
+		applied_at TIMESTAMP WITH TIME ZONE
 	)`
 	_, err := db.Exec(query)
-	if err != nil {
-		log.Println("error creating mango_db_version")
-	}
+	return err
 }
 
 func readMigrationFiles(directory string) ([]models.Migration, error) {
