@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"io/ioutil"
 	"log"
 
 	gopg "github.com/go-pg/pg/v9"
@@ -9,12 +10,16 @@ import (
 	models "github.com/softtacos/mango/models"
 )
 
-var dbUrl = flag.String("url", "", "url to access the database")
+var dbUrl = flag.String("db", "", "url to access the database")
+var migrationDir = flag.String("dir", "", "directory that the migration files are in")
 
 func main() {
 	flag.Parse()
 	if *dbUrl == "" {
 		log.Fatal("please specify a db url")
+	}
+	if *migrationDir == "" {
+		log.Fatal("please specify a migration directory")
 	}
 
 	options, err := gopg.ParseURL(*dbUrl)
@@ -30,19 +35,19 @@ func main() {
 	if err != nil {
 		log.Fatal("unable to get database migrations ", err)
 	}
-	if result.RowsReturned() == 0{
+	if result.RowsReturned() == 0 {
 		createMigrationTable(db)
 	} else {
-	migrations, err = getDatabaseMigrationData(db)
-        	if err != nil {
-                	log.Fatal("unable to get database migrations ", err)
-        	}
+		migrations, err = getDatabaseMigrationData(db)
+		if err != nil {
+			log.Fatal("unable to get database migrations ", err)
+		}
 	}
-	log.Printf("%+v",result)
+	log.Printf("%+v", result)
 
 	log.Println(migrations)
 
-	
+	readMigrationFiles(*migrationDir)
 }
 
 func getDatabaseMigrationData(db *gopg.DB) ([]models.Migration, error) {
@@ -54,12 +59,27 @@ func getDatabaseMigrationData(db *gopg.DB) ([]models.Migration, error) {
 	return migrations, nil
 }
 
-func createMigrationTable(db *gopg.DB){
+func createMigrationTable(db *gopg.DB) {
 	query := `
-	CREATE TABLE ()
-	`
-	_,err:=db.Exec(query)
-	if err!=nil{
-	log.Println("error creating mango_db_version")
+	CREATE TABLE mango_db_version(
+		id SERIAL PRIMARY KEY,
+		file_id VARCHAR(255),
+		next_id INTEGER,
+		order_applied INTEGER,
+		applied_at TIMESTAMP WITH TIMEZONE
+	)`
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Println("error creating mango_db_version")
+	}
 }
+
+func readMigrationFiles(directory string) ([]models.Migration, error) {
+	files, err := ioutil.ReadDir(directory)
+	if err != nil {
+		return nil, err
+	}
+	log.Println(files)
+
+	return nil, nil
 }
