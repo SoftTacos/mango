@@ -67,9 +67,9 @@ func Migrate(db *gopg.DB, migrationDir string) error {
 	if err != nil {
 		log.Fatal("unable to get migration files ", err)
 	}
-
-	log.Printf("files: %+v", migrationFiles)
-
+	for _, mig := range migrationFiles {
+		log.Printf("files: %+v", mig)
+	}
 	// check next migration ID validities
 
 	// goto each file, check if migration is in DB
@@ -103,6 +103,7 @@ func readMigrationFiles(directory string) ([]models.Migration, error) {
 }
 
 var mangoTagRegex = regexp.MustCompile(`^\s*--mango .*`)
+var whitespaceLineRegex = regexp.MustCompile(`^\s*$`)
 var ErrInvalidCommand = errors.New("invalid mango tag")
 var ErrNoFileID = errors.New("no file ID after next tag")
 
@@ -117,18 +118,24 @@ func parseMigrationFile(filename string) (*models.Migration, error) {
 
 	reader := bytes.NewReader(fileBytes)
 	scanner := bufio.NewReader(reader)
+	query := []byte{}
 	for line, _, err := scanner.ReadLine(); err == nil; line, _, err = scanner.ReadLine() {
+		if whitespaceLineRegex.Match(line) {
+			continue
+		}
 		log.Println(string(line))
 		if mangoTagRegex.Match(line) {
 			parseTag(line, &migration)
+			continue
 		}
 
+		query = append(query, append(line, []byte("\n")...)...) // append newline to line, append that to query
 	}
 	// if err != nil {
 	// 	return nil, err
 	// }
 
-	return nil, nil
+	return &migration, nil
 }
 
 func parseTag(line []byte, migration *models.Migration) error {

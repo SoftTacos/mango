@@ -12,8 +12,8 @@ type MigrationDB struct {
 	OrderApplied  uint   //
 	Applied       bool   //
 	LastAppliedAt *time.Time
-	QueryUp       string // query to upgrade version
-	QueryDown     string // query to downgrade version
+	QueryUp       []byte // query to upgrade version
+	QueryDown     []byte // query to downgrade version
 }
 
 func NewMigration() Migration {
@@ -27,5 +27,5 @@ func NewMigration() Migration {
 type Migration struct {
 	*MigrationDB
 	NextMigration *Migration
-	Query         *string
+	Query         *[]byte // todo: change to value
 }
