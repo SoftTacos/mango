@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"regexp"
@@ -61,14 +62,15 @@ func Migrate(db *gopg.DB, migrationDir string) error {
 		}
 	}
 
-	log.Printf("DB: %+v", dbMigrations)
+	fmt.Printf("DB: %+v", dbMigrations)
 
 	migrationFiles, err := readMigrationFiles(migrationDir)
 	if err != nil {
 		log.Fatal("unable to get migration files ", err)
 	}
 	for _, mig := range migrationFiles {
-		log.Printf("files: %+v", mig)
+		fmt.Printf("UP QUERY: %+v", string(mig.MigrationDB.QueryUp))
+		fmt.Printf("DOWN QUERY: %+v\n", string(mig.MigrationDB.QueryDown))
 	}
 	// check next migration ID validities
 
@@ -86,64 +88,68 @@ func readMigrationFiles(directory string) ([]models.Migration, error) {
 	if err != nil {
 		return nil, err
 	}
+	migrations := []models.Migration{}
 	for _, file := range files {
 		filename := file.Name()
 		if migrationFilenameRegex.MatchString(filename) {
-			// migFiles = append(migFiles, file)
 			migration, err := parseMigrationFile(directory + filename)
 			if err != nil {
 				log.Println(err)
 				continue
 			}
-			log.Println(migration)
+			migrations = append(migrations, migration)
 		}
 	}
 
-	return nil, nil
+	return migrations, nil
 }
 
-var mangoTagRegex = regexp.MustCompile(`^\s*--mango .*`)
+var mangoTagRegex = regexp.MustCompile(`^\s*--mango `)
 var whitespaceLineRegex = regexp.MustCompile(`^\s*$`)
 var ErrInvalidCommand = errors.New("invalid mango tag")
 var ErrNoFileID = errors.New("no file ID after next tag")
 
-func parseMigrationFile(filename string) (*models.Migration, error) {
+func parseMigrationFile(filename string) (models.Migration, error) {
 	log.Println("parsing file: ", filename)
+	migration := models.NewMigration()
+
 	fileBytes, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return nil, err
+		return migration, err
 	}
-
-	migration := models.NewMigration()
 
 	reader := bytes.NewReader(fileBytes)
 	scanner := bufio.NewReader(reader)
-	query := []byte{}
 	for line, _, err := scanner.ReadLine(); err == nil; line, _, err = scanner.ReadLine() {
 		if whitespaceLineRegex.Match(line) {
 			continue
 		}
-		log.Println(string(line))
+		// fmt.Println(string(line))
 		if mangoTagRegex.Match(line) {
-			parseTag(line, &migration)
+			err = parseTag(line, &migration)
+			if err != nil {
+				return migration, err
+			}
 			continue
 		}
 
-		query = append(query, append(line, []byte("\n")...)...) // append newline to line, append that to query
+		if migration.Query { // up query
+			migration.QueryUp = append(migration.QueryUp, append(line, []byte("\n")...)...)
+		} else { // down query
+			migration.QueryDown = append(migration.QueryDown, append(line, []byte("\n")...)...)
+		}
 	}
-	// if err != nil {
-	// 	return nil, err
-	// }
 
-	return &migration, nil
+	return migration, nil
 }
 
 func parseTag(line []byte, migration *models.Migration) error {
 	log.Println("comment line: ", string(line))
 	commandBytes := mangoTagRegex.ReplaceAll(line, []byte{})
-	args := bytes.Split(commandBytes, []byte{' '})
+	log.Println("LINE: ", string(commandBytes))
+	args := bytes.Split(commandBytes, []byte(" "))
 	if len(args) < 1 {
-		return nil // todo: better handling of useless line?
+		return nil
 	}
 	switch string(args[0]) {
 	case "next":
@@ -156,9 +162,13 @@ func parseTag(line []byte, migration *models.Migration) error {
 			return err
 		}
 	case "up":
-		migration.Query = &migration.MigrationDB.QueryUp
+		log.Println("UP")
+		// migration.Query = &migration.MigrationDB.QueryUp
+		migration.Query = true
 	case "down":
-		migration.Query = &migration.MigrationDB.QueryDown
+		log.Println("DOWN")
+		// migration.Query = &migration.MigrationDB.QueryDown
+		migration.Query = false
 	default:
 		return ErrInvalidCommand
 	}

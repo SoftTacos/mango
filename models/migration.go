@@ -20,12 +20,12 @@ func NewMigration() Migration {
 	migDB := &MigrationDB{}
 	return Migration{
 		MigrationDB: migDB,
-		Query:       &migDB.QueryUp,
+		Query:       true,
 	}
 }
 
 type Migration struct {
 	*MigrationDB
 	NextMigration *Migration
-	Query         *[]byte // todo: change to value
+	Query         bool
 }
