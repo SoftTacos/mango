@@ -13,6 +13,8 @@ import (
 
 var dbUrl = flag.String("db", "", "url to access the database")
 var migrationDir = flag.String("dir", "", "directory that the migration files are in")
+var migrationsRequested = flag.String("mig", "", "names of migrations you would like to apply or remove")
+var command = flag.String("cmd", "apply", "apply/remove")
 
 type Command struct {
 	Direction     int
