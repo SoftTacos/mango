@@ -15,6 +15,7 @@ var dbUrl = flag.String("db", "", "url to access the database")
 var migrationDir = flag.String("dir", "", "directory that the migration files are in")
 var migrationsRequested = flag.String("mig", "", "names of migrations you would like to apply or remove")
 var command = flag.String("cmd", "apply", "apply/remove")
+var autoApply = flag.Bool("auto", false, "weather or not to apply pre-requisite migrations that have not been applied for a given migration if they have not been supplied")
 
 type Command struct {
 	Direction     int
