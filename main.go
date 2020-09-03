@@ -10,6 +10,7 @@ import (
 	"log"
 	"regexp"
 	"strconv"
+	"strings"
 
 	gopg "github.com/go-pg/pg/v9"
 
@@ -69,8 +70,8 @@ func Migrate(db *gopg.DB, migrationDir string) error {
 		log.Fatal("unable to get migration files ", err)
 	}
 	for _, mig := range migrationFiles {
-		fmt.Printf("UP QUERY: %+v", string(mig.MigrationDB.QueryUp))
-		fmt.Printf("DOWN QUERY: %+v\n", string(mig.MigrationDB.QueryDown))
+		fmt.Printf("UP QUERY: %+v\n", mig.MigrationDB)
+		// fmt.Printf("DOWN QUERY: %+v\n", string(mig.MigrationDB.QueryDown))
 	}
 	// check next migration ID validities
 
@@ -81,7 +82,7 @@ func Migrate(db *gopg.DB, migrationDir string) error {
 	return nil
 }
 
-var migrationFilenameRegex = regexp.MustCompile(`^[0-9]{1,15}_.*\.sql$`)
+var migrationFilenameRegex = regexp.MustCompile(`^[0-9]{1,20}_.*\.sql$`)
 
 func readMigrationFiles(directory string) ([]models.Migration, error) {
 	files, err := ioutil.ReadDir(directory)
@@ -92,7 +93,7 @@ func readMigrationFiles(directory string) ([]models.Migration, error) {
 	for _, file := range files {
 		filename := file.Name()
 		if migrationFilenameRegex.MatchString(filename) {
-			migration, err := parseMigrationFile(directory + filename)
+			migration, err := parseMigrationFile(directory, filename)
 			if err != nil {
 				log.Println(err)
 				continue
@@ -109,14 +110,19 @@ var whitespaceLineRegex = regexp.MustCompile(`^\s*$`)
 var ErrInvalidCommand = errors.New("invalid mango tag")
 var ErrNoFileID = errors.New("no file ID after next tag")
 
-func parseMigrationFile(filename string) (models.Migration, error) {
+func parseMigrationFile(directory, filename string) (models.Migration, error) {
 	log.Println("parsing file: ", filename)
 	migration := models.NewMigration()
 
-	fileBytes, err := ioutil.ReadFile(filename)
+	fileBytes, err := ioutil.ReadFile(directory + filename)
 	if err != nil {
 		return migration, err
 	}
+
+	splitFilename := strings.SplitN(filename, "_", 2)
+	fileID, _ := strconv.ParseUint(splitFilename[0], 10, 64)
+	migration.FileID = uint(fileID)
+	migration.Name = splitFilename[1]
 
 	reader := bytes.NewReader(fileBytes)
 	scanner := bufio.NewReader(reader)
