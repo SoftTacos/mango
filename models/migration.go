@@ -5,14 +5,15 @@ import "time"
 // represents a row in the db_version table
 
 type MigrationDB struct {
-	ID           uint
-	FileID       uint
-	Name         string
-	NextFileID   uint
-	OrderApplied uint
-	AppliedAt    *time.Time
-	QueryUp      string
-	QueryDown    string
+	ID            uint
+	FileID        uint   // integer before first underscore of filename
+	Name          string // everything after the first underscore
+	NextFileID    uint   // FileID of the file that must be applied after this migration is run
+	OrderApplied  uint   //
+	Applied       bool   //
+	LastAppliedAt *time.Time
+	QueryUp       string // query to upgrade version
+	QueryDown     string // query to downgrade version
 }
 
 func NewMigration() Migration {

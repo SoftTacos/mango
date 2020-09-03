@@ -29,7 +29,8 @@ func CreateMigrationTable(db *gopg.DB) error {
 		order_applied INTEGER,
 		query_up TEXT,
 		query_down TEXT,
-		applied_at TIMESTAMP WITH TIME ZONE
+		applied boolean,
+		last_applied_at TIMESTAMP WITH TIME ZONE
 	)`
 	_, err := db.Exec(query)
 	return err
