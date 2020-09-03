@@ -27,7 +27,7 @@ const (
 
 type Command struct {
 	Command    Direction
-	Migrations []string
+	Migrations map[string]bool
 	AutoApply  bool
 }
 
@@ -59,8 +59,11 @@ func main() {
 	db := gopg.Connect(options)
 
 	// parse requested migrations
-	migrations := strings.Split(*migrationsRequested, " ")
-
+	migrationSlice := strings.Split(*migrationsRequested, " ")
+	migrations := map[string]bool{}
+	for _, mig := range migrationSlice {
+		migrations[mig] = true
+	}
 	direction := Up
 	if *command == "down" {
 		direction = Down
@@ -73,11 +76,10 @@ func main() {
 	}
 
 	err = Migrate(cmd, db, *migrationDir)
-
 }
 
 func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
-	dbMigrations := []models.Migration{}
+	dbMigrations := []*models.Migration{}
 	//newTable := false
 	result, err := db.Exec(`SELECT * FROM pg_tables WHERE tablename = 'mango_db_versions'`)
 	if err != nil {
@@ -98,27 +100,39 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 		}
 	}
 
-	dbMigMap := map[uint]models.Migration{}
-	for _, mig := range dbMigrations {
-		dbMigMap[mig.FileID] = mig
-	}
-
-	fmt.Printf("DB: %+v", dbMigrations)
-
 	migrationFiles, err := readMigrationFiles(migrationDir)
 	if err != nil {
 		log.Fatal("unable to get migration files ", err)
 	}
 
-	newVersions := []models.Migration{}
+	dbMigMap := map[uint]*models.Migration{}
+	for _, mig := range dbMigrations {
+		dbMigMap[mig.FileID] = mig
+	}
+
+	// TODO: throw error if database migrationd doesn't have a corresponding file
+
+	fmt.Printf("DB: %+v", dbMigrations)
+
+	newVersions := map[uint]*models.Migration{}
+	fileMigMap := map[uint]*models.Migration{}
 	// check if each migration file is in DB
 	for _, dbFile := range migrationFiles {
 		// if dbFile is not in the database, add to new versions
 		if _, ok := dbMigMap[dbFile.FileID]; !ok {
 			// TODO: check if we even want to apply it via the commands
-			newVersions = append(newVersions, dbFile)
+			newVersions[dbFile.FileID] = dbFile
+		}
+		fileMigMap[dbFile.FileID] = dbFile
+	}
+
+	// // associate prerequisite migrations
+	for _, migration := range fileMigMap {
+		for _, id := range migration.RequiredFileIDs {
+			migration.Dependencies = append(migration.Dependencies, fileMigMap[id])
 		}
 	}
+
 	// if file has migration in DB, check if DB has next that matches, if not update
 
 	// if file doesn't have migration in DB, apply it

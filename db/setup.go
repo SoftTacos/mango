@@ -6,8 +6,8 @@ import (
 	models "github.com/softtacos/mango/models"
 )
 
-func GetDatabaseMigrationData(db *gopg.DB) ([]models.Migration, error) {
-	migrations := []models.Migration{}
+func GetDatabaseMigrationData(db *gopg.DB) ([]*models.Migration, error) {
+	migrations := []*models.Migration{}
 	query := `
 		SELECT
 			*
@@ -25,7 +25,7 @@ func CreateMigrationTable(db *gopg.DB) error {
 	CREATE TABLE mango_db_versions(
 		id SERIAL PRIMARY KEY,
 		file_id VARCHAR(255),
-		next_File_id INTEGER,
+		required_file_ids INTEGER[],
 		order_applied INTEGER,
 		query_up TEXT,
 		query_down TEXT,

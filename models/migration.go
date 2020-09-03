@@ -8,7 +8,7 @@ type MigrationDB struct {
 	ID              uint
 	FileID          uint   // integer before first underscore of filename
 	Name            string // everything after the first underscore
-	RequiredFileIDs []uint // FileIDs of the migrations that must be run before this migration is applied
+	RequiredFileIDs []uint `pg:"required_file_ids,array"` // FileIDs of the migrations that must be run before this migration is applied
 	OrderApplied    uint   //
 	Applied         bool   //
 	LastAppliedAt   *time.Time
@@ -21,13 +21,15 @@ func NewMigration() Migration {
 		RequiredFileIDs: []uint{},
 	}
 	return Migration{
-		MigrationDB: migDB,
-		Query:       true,
+		MigrationDB:  migDB,
+		Query:        true,
+		Dependencies: []*Migration{},
 	}
 }
 
 type Migration struct {
 	*MigrationDB
-	NextMigration *Migration
-	Query         bool
+	// NextMigration *Migration
+	Query        bool
+	Dependencies []*Migration
 }
