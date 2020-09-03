@@ -6,8 +6,11 @@ import "time"
 
 type Migration struct {
 	ID           uint
-	NextID       uint
+	FileID       uint
+	Name         string
+	NextFileID   uint
 	OrderApplied uint
-	FileID       string
 	AppliedAt    *time.Time
+	QueryUp      string
+	QueryDown    string
 }
