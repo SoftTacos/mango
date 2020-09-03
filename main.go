@@ -1,16 +1,9 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"regexp"
-	"strconv"
-	"strings"
 
 	gopg "github.com/go-pg/pg/v9"
 
@@ -20,6 +13,14 @@ import (
 
 var dbUrl = flag.String("db", "", "url to access the database")
 var migrationDir = flag.String("dir", "", "directory that the migration files are in")
+
+type Command struct {
+	Direction     int
+	TargetVersion string
+}
+
+// idea is to not worry about the actual linear version of the database, but rather to make sure migrations that need to have an order, are applied/removed in that specific order.
+// conceptually similar to branching in github except without a branch name. "branches" are defined by the next file ID supplied with the next tag
 
 func main() {
 	flag.Parse()
@@ -37,11 +38,13 @@ func main() {
 
 	db := gopg.Connect(options)
 
-	err = Migrate(db, *migrationDir)
+	cmd := Command{}
+
+	err = Migrate(cmd, db, *migrationDir)
 
 }
 
-func Migrate(db *gopg.DB, migrationDir string) error {
+func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 	dbMigrations := []models.Migration{}
 	//newTable := false
 	result, err := db.Exec(`SELECT * FROM pg_tables WHERE tablename = 'mango_db_versions'`)
@@ -63,121 +66,33 @@ func Migrate(db *gopg.DB, migrationDir string) error {
 		}
 	}
 
+	dbMigMap := map[uint]models.Migration{}
+	for _, mig := range dbMigrations {
+		dbMigMap[mig.FileID] = mig
+	}
+
 	fmt.Printf("DB: %+v", dbMigrations)
 
 	migrationFiles, err := readMigrationFiles(migrationDir)
 	if err != nil {
 		log.Fatal("unable to get migration files ", err)
 	}
-	for _, mig := range migrationFiles {
-		fmt.Printf("UP QUERY: %+v\n", mig.MigrationDB)
-		// fmt.Printf("DOWN QUERY: %+v\n", string(mig.MigrationDB.QueryDown))
-	}
-	// check next migration ID validities
 
-	// goto each file, check if migration is in DB
-
-	//
-
-	return nil
-}
-
-var migrationFilenameRegex = regexp.MustCompile(`^[0-9]{1,20}_.*\.sql$`)
-
-func readMigrationFiles(directory string) ([]models.Migration, error) {
-	files, err := ioutil.ReadDir(directory)
-	if err != nil {
-		return nil, err
-	}
-	migrations := []models.Migration{}
-	for _, file := range files {
-		filename := file.Name()
-		if migrationFilenameRegex.MatchString(filename) {
-			migration, err := parseMigrationFile(directory, filename)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			migrations = append(migrations, migration)
+	newVersions := []models.Migration{}
+	// check if each migration file is in DB
+	for _, dbFile := range migrationFiles {
+		// if dbFile is not in the database, add to new versions
+		if _, ok := dbMigMap[dbFile.FileID]; !ok {
+			// TODO: check if we even want to apply it via the commands
+			newVersions = append(newVersions, dbFile)
 		}
 	}
+	// if file has migration in DB, check if DB has next that matches, if not update
 
-	return migrations, nil
-}
+	// if file doesn't have migration in DB, apply it
+	// // TODO: up/downgrade to particular mango version
 
-var mangoTagRegex = regexp.MustCompile(`^\s*--mango `)
-var whitespaceLineRegex = regexp.MustCompile(`^\s*$`)
-var ErrInvalidCommand = errors.New("invalid mango tag")
-var ErrNoFileID = errors.New("no file ID after next tag")
-
-func parseMigrationFile(directory, filename string) (models.Migration, error) {
-	log.Println("parsing file: ", filename)
-	migration := models.NewMigration()
-
-	fileBytes, err := ioutil.ReadFile(directory + filename)
-	if err != nil {
-		return migration, err
-	}
-
-	splitFilename := strings.SplitN(filename, "_", 2)
-	fileID, _ := strconv.ParseUint(splitFilename[0], 10, 64)
-	migration.FileID = uint(fileID)
-	migration.Name = splitFilename[1]
-
-	reader := bytes.NewReader(fileBytes)
-	scanner := bufio.NewReader(reader)
-	for line, _, err := scanner.ReadLine(); err == nil; line, _, err = scanner.ReadLine() {
-		if whitespaceLineRegex.Match(line) {
-			continue
-		}
-		// fmt.Println(string(line))
-		if mangoTagRegex.Match(line) {
-			err = parseTag(line, &migration)
-			if err != nil {
-				return migration, err
-			}
-			continue
-		}
-
-		if migration.Query { // up query
-			migration.QueryUp = append(migration.QueryUp, append(line, []byte("\n")...)...)
-		} else { // down query
-			migration.QueryDown = append(migration.QueryDown, append(line, []byte("\n")...)...)
-		}
-	}
-
-	return migration, nil
-}
-
-func parseTag(line []byte, migration *models.Migration) error {
-	log.Println("comment line: ", string(line))
-	commandBytes := mangoTagRegex.ReplaceAll(line, []byte{})
-	log.Println("LINE: ", string(commandBytes))
-	args := bytes.Split(commandBytes, []byte(" "))
-	if len(args) < 1 {
-		return nil
-	}
-	switch string(args[0]) {
-	case "next":
-		if len(args) < 2 {
-			return ErrNoFileID
-		}
-		nfid64, err := strconv.ParseUint(string(args[1]), 10, 64)
-		migration.NextFileID = uint(nfid64)
-		if err != nil {
-			return err
-		}
-	case "up":
-		log.Println("UP")
-		// migration.Query = &migration.MigrationDB.QueryUp
-		migration.Query = true
-	case "down":
-		log.Println("DOWN")
-		// migration.Query = &migration.MigrationDB.QueryDown
-		migration.Query = false
-	default:
-		return ErrInvalidCommand
-	}
+	// if migration doesn't have file...?
 
 	return nil
 }
