@@ -148,6 +148,10 @@ func parseTag(line []byte, migration *models.Migration) error {
 		if err != nil {
 			return err
 		}
+	case "up":
+		migration.Query = &migration.MigrationDB.QueryUp
+	case "down":
+		migration.Query = &migration.MigrationDB.QueryDown
 	default:
 		return ErrInvalidCommand
 	}
