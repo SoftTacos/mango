@@ -35,6 +35,11 @@ func main() {
 
 	db := gopg.Connect(options)
 
+	err = Migrate(db, *migrationDir)
+
+}
+
+func Migrate(db *gopg.DB, migrationDir string) error {
 	dbMigrations := []models.Migration{}
 	//newTable := false
 	result, err := db.Exec(`SELECT * FROM pg_tables WHERE tablename = 'mango_db_versions'`)
@@ -58,7 +63,7 @@ func main() {
 
 	log.Printf("DB: %+v", dbMigrations)
 
-	migrationFiles, err := readMigrationFiles(*migrationDir)
+	migrationFiles, err := readMigrationFiles(migrationDir)
 	if err != nil {
 		log.Fatal("unable to get migration files ", err)
 	}
@@ -66,6 +71,12 @@ func main() {
 	log.Printf("files: %+v", migrationFiles)
 
 	// check next migration ID validities
+
+	// goto each file, check if migration is in DB
+
+	//
+
+	return nil
 }
 
 var migrationFilenameRegex = regexp.MustCompile(`^[0-9]{1,15}_.*\.sql$`)
@@ -102,14 +113,14 @@ func parseMigrationFile(filename string) (*models.Migration, error) {
 		return nil, err
 	}
 
-	migration := &models.Migration{}
+	migration := models.NewMigration()
 
 	reader := bytes.NewReader(fileBytes)
 	scanner := bufio.NewReader(reader)
 	for line, _, err := scanner.ReadLine(); err == nil; line, _, err = scanner.ReadLine() {
 		log.Println(string(line))
 		if mangoTagRegex.Match(line) {
-			parseTag(line, migration)
+			parseTag(line, &migration)
 		}
 
 	}
