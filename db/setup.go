@@ -24,8 +24,8 @@ func CreateMigrationTable(db *gopg.DB) error {
 	query := `
 	CREATE TABLE mango_db_versions(
 		id SERIAL PRIMARY KEY,
-		file_id VARCHAR(255),
-		required_file_ids INTEGER[],
+		filename TEXT,
+		required_files TEXT[],
 		order_applied INTEGER,
 		query_up TEXT,
 		query_down TEXT,

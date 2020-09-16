@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -26,9 +27,9 @@ const (
 )
 
 type Command struct {
-	Command    Direction
-	Migrations map[string]bool
-	AutoApply  bool
+	Command             Direction
+	RequestedMigrations map[string]bool
+	AutoApply           bool
 }
 
 // idea is to not worry about the actual linear version of the database, but rather to make sure migrations that need to have an order, are applied/removed in that specific order.
@@ -70,13 +71,20 @@ func main() {
 	}
 
 	cmd := Command{
-		Command:    direction,
-		Migrations: migrations,
-		AutoApply:  *autoApply,
+		Command:             direction,
+		RequestedMigrations: migrations,
+		AutoApply:           *autoApply,
 	}
 
 	err = Migrate(cmd, db, *migrationDir)
+	if err != nil {
+		fmt.Println("ERROR:", err)
+	}
 }
+
+var ErrNoMigrations = errors.New("no migrations to run")
+var ErrMigrationNotFound = errors.New("one of the migrations requested was not found in the supplied directory")
+var ErrMigrationDependencyNotFound = errors.New("a dependency for one of the migrations was not found")
 
 func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 	dbMigrations := []*models.Migration{}
@@ -104,41 +112,77 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 	if err != nil {
 		log.Fatal("unable to get migration files ", err)
 	}
+	if len(migrationFiles) == 0 {
+		log.Println("no migrations to run in directory:", migrationDir)
+		return ErrNoMigrations
+	}
+	fmt.Println(migrationFiles)
 
-	dbMigMap := map[uint]*models.Migration{}
+	dbMigMap := map[string]*models.Migration{}
 	for _, mig := range dbMigrations {
-		dbMigMap[mig.FileID] = mig
+		dbMigMap[mig.Filename] = mig
 	}
 
-	// TODO: throw error if database migrationd doesn't have a corresponding file
-
-	fmt.Printf("DB: %+v", dbMigrations)
-
-	newVersions := map[uint]*models.Migration{}
-	fileMigMap := map[uint]*models.Migration{}
+	newVersions := map[string]*models.Migration{}
+	fileMigMap := map[string]*models.Migration{}
 	// check if each migration file is in DB
 	for _, dbFile := range migrationFiles {
 		// if dbFile is not in the database, add to new versions
-		if _, ok := dbMigMap[dbFile.FileID]; !ok {
+		if _, ok := dbMigMap[dbFile.Filename]; !ok {
 			// TODO: check if we even want to apply it via the commands
-			newVersions[dbFile.FileID] = dbFile
+			newVersions[dbFile.Filename] = dbFile
 		}
-		fileMigMap[dbFile.FileID] = dbFile
+		fileMigMap[dbFile.Filename] = dbFile
 	}
+	// TODO: throw error if database migrationd doesn't have a corresponding file
 
 	// // associate prerequisite migrations
 	for _, migration := range fileMigMap {
-		for _, id := range migration.RequiredFileIDs {
+		for _, id := range migration.RequiredFiles {
+			fmt.Println(migration, id)
+			if _, ok := fileMigMap[id]; !ok {
+				return ErrMigrationDependencyNotFound
+			}
 			migration.Dependencies = append(migration.Dependencies, fileMigMap[id])
 		}
 	}
 
+	// TODO: check if migration is even in the directory
+	fmt.Println(cmd.RequestedMigrations)
+	fmt.Println(fileMigMap)
+	fmt.Println(dbMigMap)
+	for requested := range cmd.RequestedMigrations {
+		if _, ok := fileMigMap[requested]; !ok {
+			return ErrMigrationNotFound
+		}
+
+		err := ApplyMigration(requested, fileMigMap, dbMigMap)
+		if err != nil {
+			log.Println(err)
+		}
+	}
 	// if file has migration in DB, check if DB has next that matches, if not update
 
 	// if file doesn't have migration in DB, apply it
 	// // TODO: up/downgrade to particular mango version
 
 	// if migration doesn't have file...?
+
+	return nil
+}
+
+func ApplyMigration(requested string, fileMigMap, dbMigMap map[string]*models.Migration) error {
+	fmt.Println(requested, fileMigMap[requested])
+	if fileMigMap[requested].Applied {
+		return nil
+	}
+	for _, dbMig := range fileMigMap[requested].Dependencies {
+		err := ApplyMigration(dbMig.Filename, fileMigMap, dbMigMap)
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Println("APPLYING MIGRATION")
 
 	return nil
 }

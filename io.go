@@ -4,16 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"regexp"
-	"strconv"
-	"strings"
 
 	models "github.com/softtacos/mango/models"
 )
 
-var migrationFilenameRegex = regexp.MustCompile(`^[0-9]{1,20}_.*\.sql$`)
+var migrationFilenameRegex = regexp.MustCompile(`^.*\.sql$`)
 
 func readMigrationFiles(directory string) ([]*models.Migration, error) {
 	files, err := ioutil.ReadDir(directory)
@@ -23,8 +22,9 @@ func readMigrationFiles(directory string) ([]*models.Migration, error) {
 	migrations := []*models.Migration{}
 	for _, file := range files {
 		filename := file.Name()
+		fmt.Println("FILE:", filename)
 		if migrationFilenameRegex.MatchString(filename) {
-			migration, err := parseMigrationFile(directory, filename)
+			migration, err := parseMigrationFile(directory+`\`, filename)
 			if err != nil {
 				log.Println(err)
 				continue
@@ -49,10 +49,12 @@ func parseMigrationFile(directory, filename string) (models.Migration, error) {
 		return migration, err
 	}
 
-	splitFilename := strings.SplitN(filename, "_", 2)
-	fileID, _ := strconv.ParseUint(splitFilename[0], 10, 64)
-	migration.FileID = uint(fileID)
-	migration.Name = splitFilename[1]
+	// splitFilename := strings.SplitN(filename, "_", 2)
+	// fileID, _ := strconv.ParseUint(splitFilename[0], 10, 64)
+	// migration.FileID = uint(fileID)
+	// migration.Name = splitFilename[1]
+
+	migration.Filename = filename
 
 	reader := bytes.NewReader(fileBytes)
 	scanner := bufio.NewReader(reader)
@@ -90,11 +92,7 @@ func parseTag(line []byte, migration *models.Migration) error {
 		if len(args) < 2 {
 			return ErrNoFileID
 		}
-		nfid64, err := strconv.ParseUint(string(args[1]), 10, 64)
-		migration.RequiredFileIDs = append(migration.RequiredFileIDs, uint(nfid64))
-		if err != nil {
-			return err
-		}
+		migration.RequiredFiles = append(migration.RequiredFiles, string(args[1]))
 	case "up":
 		migration.Query = true
 	case "down":
