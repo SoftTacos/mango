@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"regexp"
@@ -23,7 +22,6 @@ func readMigrationFiles(directory string) ([]*models.Migration, error) {
 	migrations := []*models.Migration{}
 	for _, file := range files {
 		filename := file.Name()
-		fmt.Println("FILE:", filename)
 		if migrationFilenameRegex.MatchString(filename) {
 			migration, err := parseMigrationFile(directory+`\`, filename)
 			if err != nil {

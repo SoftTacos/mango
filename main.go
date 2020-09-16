@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	gopg "github.com/go-pg/pg/v9"
 
@@ -28,7 +29,7 @@ const (
 
 type Command struct {
 	Command             Direction
-	RequestedMigrations map[string]bool
+	RequestedMigrations []string
 	AutoApply           bool
 }
 
@@ -61,10 +62,10 @@ func main() {
 
 	// parse requested migrations
 	migrationSlice := strings.Split(*migrationsRequested, " ")
-	migrations := map[string]bool{}
-	for _, mig := range migrationSlice {
-		migrations[mig] = true
-	}
+	// migrations := map[string]bool{}
+	// for _, mig := range migrationSlice {
+	// 	migrations[mig] = true
+	// }
 	direction := Up
 	if *command == "down" {
 		direction = Down
@@ -72,7 +73,7 @@ func main() {
 
 	cmd := Command{
 		Command:             direction,
-		RequestedMigrations: migrations,
+		RequestedMigrations: migrationSlice,
 		AutoApply:           *autoApply,
 	}
 
@@ -122,45 +123,55 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 		dbMigMap[mig.Filename] = mig
 	}
 
-	newVersions := map[string]*models.Migration{}
+	newMigrations := map[string]*models.Migration{}
 	fileMigMap := map[string]*models.Migration{}
 	// check if each migration file is in DB
-	for _, dbFile := range migrationFiles {
+	for _, migFile := range migrationFiles {
 		// if dbFile is not in the database, add to new versions
-		if _, ok := dbMigMap[dbFile.Filename]; !ok {
-			// TODO: check if we even want to apply it via the commands
-			newVersions[dbFile.Filename] = dbFile
+		if _, ok := dbMigMap[migFile.Filename]; !ok {
+			newMigrations[migFile.Filename] = migFile
 		}
-		fileMigMap[dbFile.Filename] = dbFile
+		fileMigMap[migFile.Filename] = migFile
 	}
-	// TODO: throw error if database migrationd doesn't have a corresponding file
 
-	// // associate prerequisite migrations
+	fileMigMap, dbMigMap = AssociateMigrations(fileMigMap, dbMigMap)
+
+	// TODO: throw error if database migration doesn't have a corresponding file
+
+	// associate prerequisite migrations
 	for _, migration := range fileMigMap {
-		for _, id := range migration.RequiredFiles {
-			if _, ok := fileMigMap[id]; !ok {
+		for _, filename := range migration.RequiredFiles {
+			if _, ok := fileMigMap[filename]; !ok {
 				return ErrMigrationDependencyNotFound
 			}
-			migration.Dependencies = append(migration.Dependencies, fileMigMap[id])
+			migration.Dependencies = append(migration.Dependencies, fileMigMap[filename])
 		}
 	}
 
-	for _, mig := range fileMigMap {
-		fmt.Println(mig.Filename, mig)
+	// fmt.Println("REQUESTED:", cmd.RequestedMigrations)
+	// fmt.Println("FILE MIGS:", fileMigMap)
+	// fmt.Println("DB MIGS:", dbMigMap)
+
+	if len(cmd.RequestedMigrations) == 1 {
+		if cmd.RequestedMigrations[0] == "*" || cmd.RequestedMigrations[0] == "all" {
+			reqMig := make([]string, len(fileMigMap))
+			i := 0
+			for _, fileMig := range fileMigMap {
+				reqMig[i] = fileMig.Filename
+				i++
+			}
+			cmd.RequestedMigrations = reqMig
+		}
 	}
 
-	fmt.Println("REQUESTED:", cmd.RequestedMigrations)
-	fmt.Println("FILE MIGS:", fileMigMap)
-	fmt.Println("DB MIGS:", dbMigMap)
-
-	for requested := range cmd.RequestedMigrations {
+	for _, requested := range cmd.RequestedMigrations {
 		if _, ok := fileMigMap[requested]; !ok {
 			return ErrMigrationNotFound
 		}
 
-		err := ApplyMigration(requested, fileMigMap, dbMigMap, db)
+		err := ApplyMigration(requested, fileMigMap, db)
 		if err != nil {
-			log.Println(err)
+			return err
 		}
 	}
 	// if file has migration in DB, check if DB has next that matches, if not update
@@ -173,25 +184,44 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 	return nil
 }
 
-func ApplyMigration(requested string, fileMigMap, dbMigMap map[string]*models.Migration, db *gopg.DB) error {
-	fmt.Println(requested, fileMigMap[requested])
+func ApplyMigration(requested string, fileMigMap map[string]*models.Migration, db *gopg.DB) error {
 	// if migration is already in DB and has been applied, return
-	if dbMig, ok := dbMigMap[requested]; ok {
-		if dbMig.Applied {
+	if mig, ok := fileMigMap[requested]; ok {
+		if mig.Applied {
 			return nil
 		}
 	}
 
 	// apply all dependencies to migration
-	for _, dbMig := range fileMigMap[requested].Dependencies {
-		err := ApplyMigration(dbMig.Filename, fileMigMap, dbMigMap, db)
+	for _, mig := range fileMigMap[requested].Dependencies {
+		err := ApplyMigration(mig.Filename, fileMigMap, db)
 		if err != nil {
 			return err
 		}
 	}
 
 	fmt.Println("APPLYING MIGRATION", requested)
+	// attempt to apply migration
+	_, err := db.Exec(string(fileMigMap[requested].QueryUp))
+	if err != nil {
+		fmt.Println("error applying migration:\n\t", string(fileMigMap[requested].QueryUp))
+		return err
+	}
+
+	fmt.Println("INSERTING MIGRATION RECORD", requested)
+	// insert new migration
+	meow := time.Now()
 	fileMigMap[requested].Applied = true
+	fileMigMap[requested].LastAppliedAt = &meow
 
 	return queries.InsertMigration(db, fileMigMap[requested].MigrationDB)
+}
+
+func AssociateMigrations(fileMigMap, dbMigMap map[string]*models.Migration) (map[string]*models.Migration, map[string]*models.Migration) {
+	for _, fileMig := range fileMigMap {
+		if _, ok := dbMigMap[fileMig.Filename]; ok {
+			fileMigMap[fileMig.Filename] = dbMigMap[fileMig.Filename]
+		}
+	}
+	return fileMigMap, dbMigMap
 }
