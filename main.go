@@ -16,7 +16,7 @@ import (
 var dbUrl = flag.String("db", "", "url to access the database")
 var migrationDir = flag.String("dir", "", "directory that the migration files are in")
 var migrationsRequested = flag.String("mig", "", "names of migrations you would like to apply or remove")
-var command = flag.String("cmd", "up", "up or downg")
+var command = flag.String("cmd", "up", "up or down")
 var autoApply = flag.Bool("auto", false, "whether or not to apply pre-requisite migrations that have not been applied for a given migration if they have not been supplied")
 
 type Direction int8
@@ -116,7 +116,6 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 		log.Println("no migrations to run in directory:", migrationDir)
 		return ErrNoMigrations
 	}
-	fmt.Println(migrationFiles)
 
 	dbMigMap := map[string]*models.Migration{}
 	for _, mig := range dbMigrations {
@@ -139,7 +138,6 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 	// // associate prerequisite migrations
 	for _, migration := range fileMigMap {
 		for _, id := range migration.RequiredFiles {
-			fmt.Println(migration, id)
 			if _, ok := fileMigMap[id]; !ok {
 				return ErrMigrationDependencyNotFound
 			}
@@ -147,7 +145,10 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 		}
 	}
 
-	// TODO: check if migration is even in the directory
+	for _, mig := range fileMigMap {
+		fmt.Println(mig.Filename, mig)
+	}
+
 	fmt.Println(cmd.RequestedMigrations)
 	fmt.Println(fileMigMap)
 	fmt.Println(dbMigMap)
@@ -156,7 +157,7 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 			return ErrMigrationNotFound
 		}
 
-		err := ApplyMigration(requested, fileMigMap, dbMigMap)
+		err := ApplyMigration(requested, fileMigMap, dbMigMap, db)
 		if err != nil {
 			log.Println(err)
 		}
@@ -171,18 +172,20 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 	return nil
 }
 
-func ApplyMigration(requested string, fileMigMap, dbMigMap map[string]*models.Migration) error {
+func ApplyMigration(requested string, fileMigMap, dbMigMap map[string]*models.Migration, db *gopg.DB) error {
 	fmt.Println(requested, fileMigMap[requested])
-	if fileMigMap[requested].Applied {
+	if dbMigMap[requested].Applied {
 		return nil
 	}
 	for _, dbMig := range fileMigMap[requested].Dependencies {
-		err := ApplyMigration(dbMig.Filename, fileMigMap, dbMigMap)
+		err := ApplyMigration(dbMig.Filename, fileMigMap, dbMigMap, db)
 		if err != nil {
 			return err
 		}
 	}
-	fmt.Println("APPLYING MIGRATION")
 
-	return nil
+	fmt.Println("APPLYING MIGRATION", requested)
+	dbMigMap[requested].Applied = true
+
+	return queries.InsertMigration(db, dbMigMap[requested].MigrationDB)
 }

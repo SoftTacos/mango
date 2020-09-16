@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"regexp"
+	"strings"
 
 	models "github.com/softtacos/mango/models"
 )
@@ -82,8 +83,8 @@ func parseMigrationFile(directory, filename string) (models.Migration, error) {
 }
 
 func parseTag(line []byte, migration *models.Migration) error {
-	commandBytes := mangoTagRegex.ReplaceAll(line, []byte{})
-	args := bytes.Split(commandBytes, []byte(" "))
+	commandString := mangoTagRegex.ReplaceAllString(string(line), "")
+	args := strings.Split(commandString, " ")
 	if len(args) < 1 {
 		return nil
 	}
@@ -92,7 +93,7 @@ func parseTag(line []byte, migration *models.Migration) error {
 		if len(args) < 2 {
 			return ErrNoFileID
 		}
-		migration.RequiredFiles = append(migration.RequiredFiles, string(args[1]))
+		migration.RequiredFiles = append(migration.RequiredFiles, args[1:len(args)]...)
 	case "up":
 		migration.Query = true
 	case "down":
