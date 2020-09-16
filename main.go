@@ -88,7 +88,7 @@ var ErrMigrationDependencyNotFound = errors.New("a dependency for one of the mig
 
 func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 	dbMigrations := []*models.Migration{}
-	//newTable := false
+
 	result, err := db.Exec(`SELECT * FROM pg_tables WHERE tablename = 'mango_db_versions'`)
 	if err != nil {
 		log.Fatal("unable to get database migrations ", err)
@@ -149,9 +149,10 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 		fmt.Println(mig.Filename, mig)
 	}
 
-	fmt.Println(cmd.RequestedMigrations)
-	fmt.Println(fileMigMap)
-	fmt.Println(dbMigMap)
+	fmt.Println("REQUESTED:", cmd.RequestedMigrations)
+	fmt.Println("FILE MIGS:", fileMigMap)
+	fmt.Println("DB MIGS:", dbMigMap)
+
 	for requested := range cmd.RequestedMigrations {
 		if _, ok := fileMigMap[requested]; !ok {
 			return ErrMigrationNotFound
@@ -174,9 +175,14 @@ func Migrate(cmd Command, db *gopg.DB, migrationDir string) error {
 
 func ApplyMigration(requested string, fileMigMap, dbMigMap map[string]*models.Migration, db *gopg.DB) error {
 	fmt.Println(requested, fileMigMap[requested])
-	if dbMigMap[requested].Applied {
-		return nil
+	// if migration is already in DB and has been applied, return
+	if dbMig, ok := dbMigMap[requested]; ok {
+		if dbMig.Applied {
+			return nil
+		}
 	}
+
+	// apply all dependencies to migration
 	for _, dbMig := range fileMigMap[requested].Dependencies {
 		err := ApplyMigration(dbMig.Filename, fileMigMap, dbMigMap, db)
 		if err != nil {
@@ -185,7 +191,7 @@ func ApplyMigration(requested string, fileMigMap, dbMigMap map[string]*models.Mi
 	}
 
 	fmt.Println("APPLYING MIGRATION", requested)
-	dbMigMap[requested].Applied = true
+	fileMigMap[requested].Applied = true
 
-	return queries.InsertMigration(db, dbMigMap[requested].MigrationDB)
+	return queries.InsertMigration(db, fileMigMap[requested].MigrationDB)
 }

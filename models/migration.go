@@ -11,7 +11,6 @@ type MigrationDB struct {
 	ID            uint
 	Filename      string
 	RequiredFiles []string `pg:"required_files,array"` // Filenames of the migrations that must be run before this migration is applied
-	OrderApplied  uint     //
 	Applied       bool     //
 	LastAppliedAt *time.Time
 	QueryUp       []byte // query to upgrade version
@@ -39,5 +38,5 @@ type Migration struct {
 }
 
 func (m Migration) String() string {
-	return fmt.Sprintf("{%d %s %d %+v %+v}", m.ID, m.Filename, m.OrderApplied, m.LastAppliedAt, m.Dependencies)
+	return fmt.Sprintf("{%d %s %+v %+v}", m.ID, m.Filename, m.LastAppliedAt, m.Dependencies)
 }

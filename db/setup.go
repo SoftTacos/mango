@@ -26,7 +26,6 @@ func CreateMigrationTable(db *gopg.DB) error {
 		id SERIAL PRIMARY KEY,
 		filename TEXT,
 		required_files TEXT[],
-		order_applied INTEGER,
 		query_up TEXT,
 		query_down TEXT,
 		applied boolean,
